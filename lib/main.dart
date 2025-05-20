@@ -1,5 +1,6 @@
 import 'package:appytime/screnns/AppDetailPage.dart';
 import 'package:appytime/screnns/AppUsageDetailScreen.dart';
+import 'package:appytime/services/usage_permission_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:convert';
@@ -30,7 +31,6 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-
   static const platform = MethodChannel('com.example.app/usage');
   List<Map<String, dynamic>> _appUsage = [];
   bool _isLoading = true;
@@ -39,9 +39,22 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
     super.initState();
-    _getAppUsage();
+    _checkPermissionAndLoad();
   }
 
+  Future<void> _checkPermissionAndLoad() async {
+    final hasPermission = await UsagePermissionService.isUsagePermissionGranted();
+    print(hasPermission);
+    if (!hasPermission) {
+      await UsagePermissionService.openUsageSettings();
+      setState(() {
+        _isLoading = false;
+      });
+      return;
+    }
+
+    _getAppUsage();
+  }
 
   Future<void> _getAppUsage() async {
     try {
@@ -52,13 +65,8 @@ class _MyHomePageState extends State<MyHomePage> {
         );
 
         _appUsage.sort((a, b) => (b['timeUsed'] as int).compareTo(a['timeUsed'] as int));
-
-        // Ensure timeUsed is an int to avoid 'num' issues
         _totalUsageMinutes = _appUsage.fold(0, (sum, app) => sum + (app['timeUsed'] as int? ?? 0));
-
         _isLoading = false;
-
-
       });
     } on PlatformException catch (e) {
       print("Failed to get app usage: '${e.message}'.");
@@ -68,8 +76,6 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-
-
   @override
   Widget build(BuildContext context) {
     final filteredAppUsage =
@@ -77,7 +83,6 @@ class _MyHomePageState extends State<MyHomePage> {
 
     return Scaffold(
       appBar: AppBar(
-
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -101,7 +106,6 @@ class _MyHomePageState extends State<MyHomePage> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
         children: [
-          // Header Row
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
             child: Row(
@@ -116,8 +120,6 @@ class _MyHomePageState extends State<MyHomePage> {
               ],
             ),
           ),
-
-          // App List
           Expanded(
             child: ListView.builder(
               itemCount: filteredAppUsage.length,
@@ -134,7 +136,6 @@ class _MyHomePageState extends State<MyHomePage> {
                 int? timeLimit = app['timeLimit'];
                 double progress = timeLimit != null ? (timeUsed / timeLimit).clamp(0.0, 1.0) : 0.0;
 
-                // Define limit status
                 String limitStatus;
                 if (timeLimit == null) {
                   limitStatus = "❌ Not Set";
@@ -146,7 +147,6 @@ class _MyHomePageState extends State<MyHomePage> {
 
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 10),
-
                   child: InkWell(
                     onTap: () {
                       Navigator.push(
@@ -156,17 +156,13 @@ class _MyHomePageState extends State<MyHomePage> {
                     },
                     child: Row(
                       children: [
-                        // App Icon
                         SizedBox(
                           width: 40,
                           child: appIconBytes != null
                               ? Image.memory(appIconBytes, width: 40, height: 40, fit: BoxFit.cover)
                               : const Icon(Icons.apps, size: 40),
                         ),
-
                         const SizedBox(width: 10),
-
-                        // App Name
                         Expanded(
                           flex: 2,
                           child: Text(
@@ -175,35 +171,25 @@ class _MyHomePageState extends State<MyHomePage> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-
                         const SizedBox(width: 10),
-
-                        // Time Used
                         SizedBox(
                           width: 80,
                           child: Text(formatTime(timeUsed)),
                         ),
-
                         const SizedBox(width: 20),
-
-                        // Time Limit
                         SizedBox(
                           width: 100,
                           child: Text(limitStatus),
                         ),
                       ],
-
                     ),
-                  )
+                  ),
                 );
               },
             ),
           ),
         ],
-      )
-
+      ),
     );
   }
 }
-
-
