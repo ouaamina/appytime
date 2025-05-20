@@ -1,4 +1,4 @@
-package com.example.timer
+package com.example.appytime
 
 import android.app.usage.UsageStatsManager
 import android.content.Context
@@ -30,12 +30,25 @@ class MainActivity : FlutterActivity() {
             flutterEngine.dartExecutor.binaryMessenger,
             CHANNEL
         ).setMethodCallHandler { call, result ->
+            print(call.method);
+
             if (call.method == "getAppUsage") {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
                     val appUsage = getAppUsage()
                     result.success(appUsage)
                 } else {
                     result.error("UNAVAILABLE", "Usage stats not available on this device", null)
+                }
+            } else if (call.method == "getAppState") {
+                print("packageName");
+                val packageName = call.argument<String>("packageName")
+                print("month");
+                val month = call.argument<Int>("month")
+                if (packageName != null && month != null) {
+                    val appState = getAppState(packageName, month)
+                    result.success(appState)
+                } else {
+                    result.error("INVALID_ARGUMENTS", "Missing packageName or month", null)
                 }
             } else {
                 result.notImplemented()
@@ -52,7 +65,8 @@ class MainActivity : FlutterActivity() {
         calendar.add(Calendar.DAY_OF_YEAR, -1)
         val startTime = calendar.timeInMillis
 
-        val usageStatsList = usageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, startTime, endTime)
+        val usageStatsList =
+            usageStatsManager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY, startTime, endTime)
         val packageManager = packageManager
         val appUsageList = mutableListOf<Map<String, Any>>()
 
@@ -62,15 +76,25 @@ class MainActivity : FlutterActivity() {
             try {
                 val appInfo = packageManager.getApplicationInfo(usageStats.packageName, 0)
                 val appName = packageManager.getApplicationLabel(appInfo).toString()
+                val appPackageName = appInfo.packageName;
                 val appIcon = packageManager.getApplicationIcon(appInfo)
                 val appIconBase64 = when (appIcon) {
                     is BitmapDrawable -> {
                         val byteArrayOutputStream = ByteArrayOutputStream()
-                        appIcon.bitmap.compress(Bitmap.CompressFormat.PNG, 100, byteArrayOutputStream)
+                        appIcon.bitmap.compress(
+                            Bitmap.CompressFormat.PNG,
+                            100,
+                            byteArrayOutputStream
+                        )
                         Base64.encodeToString(byteArrayOutputStream.toByteArray(), Base64.NO_WRAP)
                     }
+
                     is AdaptiveIconDrawable -> {
-                        val bitmap = Bitmap.createBitmap(appIcon.intrinsicWidth, appIcon.intrinsicHeight, Bitmap.Config.ARGB_8888)
+                        val bitmap = Bitmap.createBitmap(
+                            appIcon.intrinsicWidth,
+                            appIcon.intrinsicHeight,
+                            Bitmap.Config.ARGB_8888
+                        )
                         val canvas = Canvas(bitmap)
                         appIcon.setBounds(0, 0, canvas.width, canvas.height)
                         appIcon.draw(canvas)
@@ -78,6 +102,7 @@ class MainActivity : FlutterActivity() {
                         bitmap.compress(Bitmap.CompressFormat.PNG, 100, byteArrayOutputStream)
                         Base64.encodeToString(byteArrayOutputStream.toByteArray(), Base64.NO_WRAP)
                     }
+
                     else -> ""
                 }
                 val appCategory = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -96,16 +121,88 @@ class MainActivity : FlutterActivity() {
                     "Other"
                 }
                 val timeUsed = usageStats.totalTimeInForeground / 60000 // Convert to minutes
-                appUsageList.add(mapOf(
-                    "appName" to appName,
-                    "appIcon" to appIconBase64,
-                    "appCategory" to appCategory,
-                    "timeUsed" to timeUsed
-                ))
+                appUsageList.add(
+                    mapOf(
+                        "appName" to appName,
+                        "appPackageName" to appPackageName,
+                        "appIcon" to appIconBase64,
+                        "appCategory" to appCategory,
+                        "timeUsed" to timeUsed
+                    )
+                )
             } catch (e: PackageManager.NameNotFoundException) {
                 Log.e("MainActivity", "App not found: ${usageStats.packageName}", e)
             }
         }
 
         return appUsageList
-    }}
+    }
+
+    @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
+    private fun getAppState(packageName: String, month: Int): Map<String, List<Map<String, Int>>> {
+        val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val dailyUsage = mutableListOf<Map<String, Int>>()
+
+        val calendar = Calendar.getInstance()
+        val currentYear = calendar.get(Calendar.YEAR)
+
+        // Set calendar to the first day of the given month
+        calendar.set(Calendar.YEAR, currentYear)
+        calendar.set(Calendar.MONTH, month - 1) // Calendar.MONTH is 0-indexed
+        calendar.set(Calendar.DAY_OF_MONTH, 1)
+
+        val daysInMonth = calendar.getActualMaximum(Calendar.DAY_OF_MONTH)
+
+        for (day in 1..daysInMonth) {
+            val usage = getAppStateByDay(packageName, currentYear, month, day)
+            dailyUsage.add(mapOf("day" to day, "timeUsed" to usage))
+        }
+
+        return mapOf(
+            "dailyUsage" to dailyUsage
+        )
+    }
+
+    @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
+    private fun getAppStateByDay(packageName: String, year: Int, month: Int, day: Int): Int {
+        val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+
+        val calendarStart = Calendar.getInstance()
+        calendarStart.set(Calendar.YEAR, year)
+        calendarStart.set(Calendar.MONTH, month - 1) // Calendar.MONTH is 0-indexed
+        calendarStart.set(Calendar.DAY_OF_MONTH, day)
+        calendarStart.set(Calendar.HOUR_OF_DAY, 0)
+        calendarStart.set(Calendar.MINUTE, 0)
+        calendarStart.set(Calendar.SECOND, 0)
+        calendarStart.set(Calendar.MILLISECOND, 0)
+        val startTime = calendarStart.timeInMillis
+
+        val calendarEnd = calendarStart.clone() as Calendar
+        calendarEnd.set(Calendar.HOUR_OF_DAY, 23)
+        calendarEnd.set(Calendar.MINUTE, 59)
+        calendarEnd.set(Calendar.SECOND, 59)
+        calendarEnd.set(Calendar.MILLISECOND, 999)
+        val endTime = calendarEnd.timeInMillis
+
+        val stats = usageStatsManager.queryUsageStats(
+            UsageStatsManager.INTERVAL_DAILY,
+            startTime,
+            endTime
+        )
+        Log.d("MainActivity", "Stats size: ${stats.size}")
+
+        var dailyUsage = 0
+
+        for (usageStat in stats) {
+            if (usageStat.packageName == packageName) {
+                dailyUsage = (usageStat.totalTimeInForeground / 60000).toInt() // Convert to minutes
+                Log.d("MainActivity", "${startTime} bteween ${endTime}")
+                Log.d("MainActivity", "Found usage for $packageName: $dailyUsage minutes")
+            }
+        }
+
+        return dailyUsage
+    }
+
+
+}

@@ -1,7 +1,10 @@
+import 'package:appytime/screnns/AppDetailPage.dart';
+import 'package:appytime/screnns/AppUsageDetailScreen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:convert';
-import 'dart:typed_data';
+import 'package:appytime/utils/time_utils.dart';
+import 'package:intl/intl.dart';
 
 void main() {
   runApp(const MyApp());
@@ -27,6 +30,7 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
+
   static const platform = MethodChannel('com.example.app/usage');
   List<Map<String, dynamic>> _appUsage = [];
   bool _isLoading = true;
@@ -36,39 +40,6 @@ class _MyHomePageState extends State<MyHomePage> {
   void initState() {
     super.initState();
     _getAppUsage();
-  }
-
-  void _editTimeLimit(BuildContext context, Map<String, dynamic> app) {
-    TextEditingController _controller = TextEditingController(text: app['timeLimit']?.toString() ?? '60');
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: Text("Modifier le temps autorisé"),
-          content: TextField(
-            controller: _controller,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: "Temps autorisé en minutes"),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text("Annuler"),
-            ),
-            TextButton(
-              onPressed: () {
-                setState(() {
-                  app['timeLimit'] = int.tryParse(_controller.text) ?? 60;
-                });
-                Navigator.pop(context);
-              },
-              child: const Text("Enregistrer"),
-            ),
-          ],
-        );
-      },
-    );
   }
 
 
@@ -86,6 +57,8 @@ class _MyHomePageState extends State<MyHomePage> {
         _totalUsageMinutes = _appUsage.fold(0, (sum, app) => sum + (app['timeUsed'] as int? ?? 0));
 
         _isLoading = false;
+
+
       });
     } on PlatformException catch (e) {
       print("Failed to get app usage: '${e.message}'.");
@@ -95,11 +68,7 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  String _formatTime(int minutes) {
-    final int hours = minutes ~/ 60;
-    final int remainingMinutes = minutes % 60;
-    return '${hours}h ${remainingMinutes}m';
-  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -108,7 +77,17 @@ class _MyHomePageState extends State<MyHomePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Appy Time'),
+
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Appy Time', style: TextStyle(fontSize: 20)),
+            Text(
+              DateFormat('EEEE, MMM d, yyyy').format(DateTime.now()),
+              style: const TextStyle(fontSize: 14),
+            ),
+          ],
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
@@ -160,52 +139,62 @@ class _MyHomePageState extends State<MyHomePage> {
                 if (timeLimit == null) {
                   limitStatus = "❌ Not Set";
                 } else if (timeUsed > timeLimit) {
-                  limitStatus = "⛔ ${_formatTime(timeLimit)} (Over)";
+                  limitStatus = "⛔ ${formatTime(timeLimit)} (Over)";
                 } else {
-                  limitStatus = "✅ ${_formatTime(timeLimit)}";
+                  limitStatus = "✅ ${formatTime(timeLimit)}";
                 }
 
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 10),
-                  child: Row(
-                    children: [
-                      // App Icon
-                      SizedBox(
-                        width: 40,
-                        child: appIconBytes != null
-                            ? Image.memory(appIconBytes, width: 40, height: 40, fit: BoxFit.cover)
-                            : const Icon(Icons.apps, size: 40),
-                      ),
 
-                      const SizedBox(width: 10),
-
-                      // App Name
-                      Expanded(
-                        flex: 2,
-                        child: Text(
-                          app['appName'],
-                          style: const TextStyle(fontSize: 16),
-                          overflow: TextOverflow.ellipsis,
+                  child: InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => AppUsageDetailScreen(app: app)),
+                      );
+                    },
+                    child: Row(
+                      children: [
+                        // App Icon
+                        SizedBox(
+                          width: 40,
+                          child: appIconBytes != null
+                              ? Image.memory(appIconBytes, width: 40, height: 40, fit: BoxFit.cover)
+                              : const Icon(Icons.apps, size: 40),
                         ),
-                      ),
 
-                      const SizedBox(width: 10),
+                        const SizedBox(width: 10),
 
-                      // Time Used
-                      SizedBox(
-                        width: 80,
-                        child: Text(_formatTime(timeUsed)),
-                      ),
+                        // App Name
+                        Expanded(
+                          flex: 2,
+                          child: Text(
+                            app['appName'],
+                            style: const TextStyle(fontSize: 16),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
 
-                      const SizedBox(width: 20),
+                        const SizedBox(width: 10),
 
-                      // Time Limit
-                      SizedBox(
-                        width: 100,
-                        child: Text(limitStatus),
-                      ),
-                    ],
-                  ),
+                        // Time Used
+                        SizedBox(
+                          width: 80,
+                          child: Text(formatTime(timeUsed)),
+                        ),
+
+                        const SizedBox(width: 20),
+
+                        // Time Limit
+                        SizedBox(
+                          width: 100,
+                          child: Text(limitStatus),
+                        ),
+                      ],
+
+                    ),
+                  )
                 );
               },
             ),

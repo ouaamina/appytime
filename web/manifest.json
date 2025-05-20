@@ -1,6 +1,6 @@
 {
-    "name": "timer",
-    "short_name": "timer",
+    "name": "appytime",
+    "short_name": "appytime",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
