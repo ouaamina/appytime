@@ -72,24 +72,30 @@ class MainActivity : FlutterActivity() {
     @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
     private fun getAppUsage(): List<Map<String, Any>> {
         val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
+        val packageManager = packageManager
         val calendar = Calendar.getInstance()
         val endTime = calendar.timeInMillis
         calendar.add(Calendar.DAY_OF_YEAR, -1)
         val startTime = calendar.timeInMillis
 
         val usageStatsList = usageStatsManager.queryUsageStats(
-            UsageStatsManager.INTERVAL_DAILY,
+            UsageStatsManager.INTERVAL_BEST,
             startTime,
             endTime
         )
-        val packageManager = packageManager
-        val appUsageList = mutableListOf<Map<String, Any>>()
 
+        val usageMap = mutableMapOf<String, Long>()
         for (usageStats in usageStatsList) {
+            usageMap[usageStats.packageName] = usageStats.totalTimeInForeground
+        }
+
+        val appUsageList = mutableListOf<Map<String, Any>>()
+        val apps = packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
+
+        for (app in apps) {
             try {
-                val appInfo = packageManager.getApplicationInfo(usageStats.packageName, 0)
-                val appName = packageManager.getApplicationLabel(appInfo).toString()
-                val appIcon = packageManager.getApplicationIcon(appInfo)
+                val appName = packageManager.getApplicationLabel(app).toString()
+                val appIcon = packageManager.getApplicationIcon(app)
 
                 val appIconBase64 = when (appIcon) {
                     is BitmapDrawable -> {
@@ -116,7 +122,7 @@ class MainActivity : FlutterActivity() {
                 }
 
                 val appCategory = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    when (appInfo.category) {
+                    when (app.category) {
                         ApplicationInfo.CATEGORY_GAME -> "Game"
                         ApplicationInfo.CATEGORY_AUDIO -> "Audio"
                         ApplicationInfo.CATEGORY_VIDEO -> "Video"
@@ -129,24 +135,25 @@ class MainActivity : FlutterActivity() {
                     }
                 } else "Other"
 
-                val timeUsed = usageStats.totalTimeInForeground / 60000 // en minutes
+                val timeUsed = (usageMap[app.packageName] ?: 0L) / 60000 // convert ms to minutes
 
                 appUsageList.add(
                     mapOf(
                         "appName" to appName,
-                        "appPackageName" to usageStats.packageName,
+                        "appPackageName" to app.packageName,
                         "appIcon" to appIconBase64,
                         "appCategory" to appCategory,
                         "timeUsed" to timeUsed
                     )
                 )
-            } catch (e: PackageManager.NameNotFoundException) {
-                Log.e("MainActivity", "App not found: ${usageStats.packageName}", e)
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Error processing app ${app.packageName}", e)
             }
         }
 
         return appUsageList
     }
+
 
     @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
     private fun getAppState(packageName: String, month: Int): Map<String, List<Map<String, Int>>> {
