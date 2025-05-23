@@ -4,11 +4,17 @@ import 'package:flutter/services.dart';
 import 'package:appytime/utils/time_utils.dart';
 import 'package:fl_chart/fl_chart.dart';
 
+import '../utils/limit_utils.dart';
+
 class AppUsageDetailScreen extends StatefulWidget {
   final Map app;
-  final int dailyLimit = 200;
+  final dynamic appIconBytes;
 
-  const AppUsageDetailScreen({Key? key, required this.app}) : super(key: key);
+  const AppUsageDetailScreen({
+    Key? key,
+    required this.app,
+    required this.appIconBytes,
+  }) : super(key: key);
 
   @override
   State<AppUsageDetailScreen> createState() => _AppUsageDetailScreenState();
@@ -17,11 +23,20 @@ class AppUsageDetailScreen extends StatefulWidget {
 class _AppUsageDetailScreenState extends State<AppUsageDetailScreen> {
   List<Duration> usageList = List.generate(31, (_) => Duration.zero);
   int maxMinutes = 0;
+  int dailyLimit = 60; // Editable daily limit
 
   @override
   void initState() {
     super.initState();
+    _loadDailyLimit();
     _loadUsageDataForMonth(5); // May
+  }
+
+  Future<void> _loadDailyLimit() async {
+    final storedLimit = await loadDailyLimit(widget.app['appPackageName']);
+    setState(() {
+      dailyLimit = storedLimit ?? 60; // Valeur par défaut = 60 minutes
+    });
   }
 
   Future<void> _loadUsageDataForMonth(int month) async {
@@ -32,8 +47,6 @@ class _AppUsageDetailScreenState extends State<AppUsageDetailScreen> {
         'packageName': widget.app['appPackageName'],
         'month': month,
       });
-
-      print("App Detail getAppState: '$result'.");
 
       final Map<String, dynamic> rawMap = Map<String, dynamic>.from(result);
       final List<dynamic> dailyUsage = rawMap['dailyUsage'];
@@ -56,22 +69,57 @@ class _AppUsageDetailScreenState extends State<AppUsageDetailScreen> {
     }
   }
 
+  void _editLimit() async {
+    final controller = TextEditingController(text: dailyLimit.toString());
+    final result = await showDialog<int>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Changer la limite quotidienne'),
+        content: TextField(
+          controller: controller,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(labelText: 'Minutes'),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Annuler')),
+          TextButton(
+              onPressed: () {
+                final newLimit = int.tryParse(controller.text);
+                if (newLimit != null && newLimit > 0) {
+                  Navigator.pop(context, newLimit);
+                }
+              },
+              child: const Text('OK')),
+        ],
+      ),
+    );
+
+    if (result != null) {
+      await saveDailyLimit(widget.app['appPackageName'], result);
+      setState(() => dailyLimit = result);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isOverLimit = widget.app['timeUsed'] > widget.dailyLimit;
+    final isOverLimit = widget.app['timeUsed'] > dailyLimit;
 
     return Scaffold(
       appBar: AppBar(title: Text(widget.app['appName'])),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: ListView(
           children: [
-            Center(
-              child: Text(
-                widget.app['appName'],
-                style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Image.memory(widget.appIconBytes, width: 64, height: 64),
+                const SizedBox(width: 16),
+                Text(
+                  widget.app['appName'],
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             _buildCard(
@@ -96,7 +144,7 @@ class _AppUsageDetailScreenState extends State<AppUsageDetailScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      formatTime(widget.dailyLimit),
+                      formatTime(dailyLimit),
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -104,7 +152,7 @@ class _AppUsageDetailScreenState extends State<AppUsageDetailScreen> {
                       ),
                     ),
                     const SizedBox(width: 8),
-                    IconButton(icon: const Icon(Icons.edit), onPressed: () {}),
+                    IconButton(icon: const Icon(Icons.edit), onPressed: _editLimit),
                   ],
                 ),
               ),
@@ -161,17 +209,32 @@ class _AppUsageDetailScreenState extends State<AppUsageDetailScreen> {
                           minX: 1,
                           maxX: 31,
                           minY: 0,
-                          maxY: (maxMinutes < 60)
-                              ? 60
+                          maxY: (maxMinutes < dailyLimit)
+                              ? (dailyLimit + 30 - dailyLimit % 30).toDouble()
                               : (maxMinutes + 30 - maxMinutes % 30).toDouble(),
                           lineBarsData: [
+                            // Actual usage (gray)
                             LineChartBarData(
                               spots: [
                                 for (int i = 0; i < usageList.length; i++)
                                   FlSpot(i + 1.0, usageList[i].inMinutes.toDouble()),
                               ],
                               isCurved: true,
+                              color: Colors.grey,
+                              barWidth: 4,
+                              belowBarData: BarAreaData(show: false),
+                              dotData: FlDotData(show: false),
+                            ),
+                            // Daily limit (red dashed)
+                            LineChartBarData(
+                              spots: [
+                                for (int i = 0; i < usageList.length; i++)
+                                  FlSpot(i + 1.0, dailyLimit.toDouble()),
+                              ],
+                              isCurved: false,
                               color: Colors.red,
+                              barWidth: 2,
+                              dashArray: [5, 4],
                               belowBarData: BarAreaData(show: false),
                               dotData: FlDotData(show: false),
                             ),
