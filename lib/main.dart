@@ -1,4 +1,3 @@
-import 'package:appytime/screnns/AppDetailPage.dart';
 import 'package:appytime/screnns/AppUsageDetailScreen.dart';
 import 'package:appytime/services/usage_permission_service.dart';
 import 'package:flutter/material.dart';
@@ -151,7 +150,7 @@ class _MyHomePageState extends State<MyHomePage> {
                     onTap: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => AppUsageDetailScreen(app: app)),
+                        MaterialPageRoute(builder: (_) => AppUsageDetailScreen(app: app, appIconBytes: appIconBytes)),
                       );
                     },
                     child: Row(
