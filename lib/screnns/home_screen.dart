@@ -5,7 +5,6 @@ import 'package:intl/intl.dart';
 import 'dart:convert';
 import 'package:appytime/screnns/AppUsageDetailScreen.dart';
 import 'package:appytime/utils/time_utils.dart';
-
 import '../utils/limit_utils.dart';
 
 class MyHomePage extends StatefulWidget {
@@ -19,6 +18,7 @@ class _MyHomePageState extends State<MyHomePage> {
   static const platform = MethodChannel('com.example.app/usage');
   List<Map<String, dynamic>> _appUsage = [];
   bool _isLoading = true;
+  bool _showAllApps = false;
 
   @override
   void initState() {
@@ -28,49 +28,41 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Future<void> _checkPermissionAndLoad() async {
     final hasPermission = await UsagePermissionService.isUsagePermissionGranted();
-    print(hasPermission);
     if (!hasPermission) {
       await UsagePermissionService.openUsageSettings();
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
       return;
     }
-
     _getAppUsage();
   }
 
   Future<void> _getAppUsage() async {
     try {
       final List<dynamic> result = await platform.invokeMethod('getAppUsage');
-
       List<Map<String, dynamic>> usageList = List<Map<String, dynamic>>.from(
         result.map((e) => Map<String, dynamic>.from(e)),
       );
 
-      // Load limits in parallel
+      // Load time limits for each app
       await Future.wait(usageList.map((app) async {
-        String packageName = app['appPackageName'];
-        app['timeLimit'] = await loadDailyLimit(packageName);
+        app['timeLimit'] = await loadDailyLimit(app['appPackageName']);
       }));
 
       setState(() {
-        _appUsage = usageList;
-        _appUsage.sort((a, b) => (b['timeUsed'] as int).compareTo(a['timeUsed'] as int));
+        _appUsage = usageList..sort((a, b) => (b['timeUsed'] as int).compareTo(a['timeUsed'] as int));
         _isLoading = false;
       });
     } on PlatformException catch (e) {
       print("Failed to get app usage: '${e.message}'.");
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final filteredAppUsage =
-    _appUsage.where((app) => app['appCategory'] != 'Other').toList();
+    final filteredAppUsage = _showAllApps
+        ? _appUsage
+        : _appUsage.where((app) => app['timeUsed'] > 0 || app['appCategory'] != 'Other').toList();
 
     return Scaffold(
       appBar: AppBar(
@@ -88,7 +80,7 @@ class _MyHomePageState extends State<MyHomePage> {
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () {
-              // Handle settings navigation
+              // TODO: Navigate to settings
             },
           ),
         ],
@@ -97,6 +89,7 @@ class _MyHomePageState extends State<MyHomePage> {
           ? const Center(child: CircularProgressIndicator())
           : Column(
         children: [
+          // Header Row
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
             child: Row(
@@ -105,21 +98,40 @@ class _MyHomePageState extends State<MyHomePage> {
                 SizedBox(width: 10),
                 Expanded(flex: 2, child: Text("App Name", style: TextStyle(fontWeight: FontWeight.bold))),
                 SizedBox(width: 10),
+                Expanded(flex: 2, child: Text("Category", style: TextStyle(fontWeight: FontWeight.bold))),
+                SizedBox(width: 10),
                 SizedBox(width: 80, child: Text("Time Used", style: TextStyle(fontWeight: FontWeight.bold))),
                 SizedBox(width: 20),
                 SizedBox(width: 100, child: Text("Limit Set?", style: TextStyle(fontWeight: FontWeight.bold))),
               ],
             ),
           ),
+
+          // Toggle button
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton.icon(
+                onPressed: () {
+                  setState(() => _showAllApps = !_showAllApps);
+                },
+                icon: Icon(_showAllApps ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down),
+                label: Text(_showAllApps ? "Hide Other" : "Display Other"),
+              ),
+            ],
+          ),
+
+          // App list
           Expanded(
             child: ListView.builder(
               itemCount: filteredAppUsage.length,
               itemBuilder: (context, index) {
                 final app = filteredAppUsage[index];
                 Uint8List? appIconBytes;
+
                 try {
                   appIconBytes = base64Decode(app['appIcon']);
-                } catch (e) {
+                } catch (_) {
                   appIconBytes = null;
                 }
 
@@ -142,7 +154,12 @@ class _MyHomePageState extends State<MyHomePage> {
                     onTap: () {
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => AppUsageDetailScreen(app: app, appIconBytes: appIconBytes)),
+                        MaterialPageRoute(
+                          builder: (_) => AppUsageDetailScreen(
+                            app: app,
+                            appIconBytes: appIconBytes,
+                          ),
+                        ),
                       );
                     },
                     child: Row(
@@ -156,22 +173,21 @@ class _MyHomePageState extends State<MyHomePage> {
                         const SizedBox(width: 10),
                         Expanded(
                           flex: 2,
+                          child: Text(app['appName'], style: const TextStyle(fontSize: 16), overflow: TextOverflow.ellipsis),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          flex: 2,
                           child: Text(
-                            app['appName'],
-                            style: const TextStyle(fontSize: 16),
+                            app['appCategory'] ?? "Other",
+                            style: const TextStyle(fontSize: 14, color: Colors.grey),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         const SizedBox(width: 10),
-                        SizedBox(
-                          width: 80,
-                          child: Text(formatTime(timeUsed)),
-                        ),
+                        SizedBox(width: 80, child: Text(formatTime(timeUsed))),
                         const SizedBox(width: 20),
-                        SizedBox(
-                          width: 100,
-                          child: Text(limitStatus),
-                        ),
+                        SizedBox(width: 100, child: Text(limitStatus)),
                       ],
                     ),
                   ),
